@@ -1,0 +1,119 @@
+---
+title: Running Prefect Server with Docker Compose
+---
+
+# Running Prefect Server with Docker Compose
+
+This guide shows how to run a self-hosted Prefect server environment using Docker Compose. The setup includes:
+
+- PostgreSQL database  
+- Redis message broker  
+- Prefect server  
+- Prefect background services  
+- Prefect worker  
+
+## Prerequisites
+
+- Docker and Docker Compose installed on your machine.  
+- Basic familiarity with Docker commands.
+
+> **Note:** This setup is intended for development and testing purposes, not for production deployments.
+
+## Docker Compose File
+
+Below is the complete `docker-compose.yml` file used for this setup:
+
+```yaml
+services:
+  postgres:
+    image: postgres:14
+    environment:
+      POSTGRES_USER: prefect
+      POSTGRES_PASSWORD: prefect
+      POSTGRES_DB: prefect
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prefect"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    volumes:
+      - redis_data:/data
+
+  prefect-server:
+    image: prefecthq/prefect:3-latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PREFECT_API_DATABASE_CONNECTION_URL: postgresql+asyncpg://prefect:prefect@postgres:5432/prefect
+      PREFECT_SERVER_API_HOST: 0.0.0.0
+      PREFECT_API_URL: http://prefect-server:4200/api
+    command: >
+      bash -c "prefect server start --no-services"
+    ports:
+      - "4200:4200"
+
+  prefect-services:
+    image: prefecthq/prefect:3-latest
+    depends_on:
+      - prefect-server
+    environment:
+      PREFECT_API_DATABASE_CONNECTION_URL: postgresql+asyncpg://prefect:prefect@postgres:5432/prefect
+    command: >
+      bash -c "prefect server services start"
+
+  prefect-worker:
+    image: prefecthq/prefect:3-latest
+    depends_on:
+      - redis
+      - prefect-server
+    environment:
+      PREFECT_API_URL: http://prefect-server:4200/api
+    command: >
+      bash -c "prefect worker start --pool default-agent-pool"
+
+volumes:
+  postgres_data:
+  redis_data:
+````
+
+## How to Run
+
+1. Clone this repository or copy the Docker Compose file locally.
+2. From the directory containing `docker-compose.yml`, run:
+
+```bash
+docker compose up -d
+```
+
+3. Wait a few moments for all services to start.
+4. Open your browser and navigate to [http://localhost:4200](http://localhost:4200) to access the Prefect UI.
+
+## Notes
+
+* The PostgreSQL database is pre-configured with user and database `prefect`.
+* Redis is included for event messaging support and worker communication.
+* The worker automatically creates a default pool named `default-agent-pool`.
+* To stop the services, run:
+
+```bash
+docker compose down
+```
+
+## Troubleshooting
+
+* If the UI doesn’t load, ensure no other process is occupying port 4200.
+* Check logs via `docker compose logs -f` to see service outputs.
+* Ensure Docker and Docker Compose are installed and up to date.
+
+---
+
+For more information, visit the official [Prefect documentation](https://docs.prefect.io).
+
+---
+
